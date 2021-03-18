@@ -214,33 +214,6 @@ int decodeFrame(VASurfaceID& frame)
     return 0;
 }
 
-
-// int InferenceResnet50::Translate(std::vector<VAData *> &datas, uint32_t count, void *result, uint32_t *channelIds, uint32_t *frameIds, uint32_t *roiIds)
-// {
-//     float *curResult = (float *)result;
-//     TRACE("");
-//     for (int i = 0; i < count; i ++)
-//     {
-//         int c = -1;
-//         float conf = 0;
-//         for (int j = 0; j < m_resultSize; j ++)
-//         {
-//             if (curResult[j] > conf)
-//             {
-//                 c = j;
-//                 conf = curResult[j];
-//             }
-//         }
-//         VAData *data = VAData::Create(c, conf);
-//         data->SetID(channelIds[i], frameIds[i]);
-//         // one roi creates one output, just copy the roiIds
-//         data->SetRoiIndex(roiIds[i]);
-//         datas.push_back(data);
-//         curResult += m_resultSize;
-//     }
-//     return 0;
-// }
-
 int main (int argc, char **argv) 
 {
     if (initVA()) {
@@ -275,7 +248,7 @@ int main (int argc, char **argv)
     size_t inputChannel = inputDims[1];
     size_t inputWidth = inputDims[3];
     size_t inputHeight = inputDims[2];
-    printf("INFO: input_name = %s, input_batch = %d, input_channel = %d, input_width = %d, input_height = %d\n", 
+    printf("INFO: input_name = %s, input_batch = %ld, input_channel = %ld, input_width = %ld, input_height = %ld\n", 
         input_name.c_str(), inputBatch, inputChannel, inputWidth, inputHeight);
 
     // set output info
@@ -290,7 +263,7 @@ int main (int argc, char **argv)
     auto& _output = outputInfo.begin()->second;
     const InferenceEngine::SizeVector outputDims = _output->getTensorDesc().getDims();
     size_t outputSize = outputDims[1];
-    printf("INFO: output_name = %s, outputSize = %d\n", output_name.c_str(), outputSize);
+    printf("INFO: output_name = %s, outputSize = %ld\n", output_name.c_str(), outputSize);
 
     auto shared_va_context = gpu::make_shared_context(ie, device_name, va_dpy);
     ExecutableNetwork executable_network = ie.LoadNetwork(network, shared_va_context);
