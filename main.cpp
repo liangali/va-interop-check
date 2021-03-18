@@ -19,6 +19,7 @@
 #include "va/va.h"
 #include "va/va_drm.h"
 #include "video.h"
+#include "ref.h"
 
 #include <inference_engine.hpp>
 #include <ie_compound_blob.h>
@@ -186,26 +187,35 @@ int decodeFrame(VASurfaceID& frame)
         va_status = vaMapBuffer(va_dpy, output_image.buf, &out_buf);
         CHECK_VASTATUS(va_status, "vaMapBuffer");
 
-        FILE *fp = fopen("out_224x224.nv12", "wb+");
-        // dump y_plane
-        char *y_buf = (char*)out_buf;
+        // compare y_plane
+        int y_mismatch = 0;
+        uint8_t *y_buf = (uint8_t*)out_buf;
         int y_pitch = output_image.pitches[0];
-        for (size_t i = 0; i < CLIP_HEIGHT; i++)
-        {
-            fwrite(y_buf + y_pitch*i, CLIP_WIDTH, 1, fp);
+        for (size_t j = 0; j < CLIP_HEIGHT; j++) {
+            for (size_t i = 0; i < CLIP_WIDTH; i++) {
+                y_mismatch += (y_buf[j*y_pitch + i] != (uint8_t)ref_nv12_y[j*CLIP_WIDTH + i]);
+            }
         }
-        // dump uv_plane
-        char *uv_buf = (char*)out_buf + output_image.offsets[1];
+        if (y_mismatch) {
+            printf("INFO: warning!! decode Y-plane doesn't match with reference, mismatch_count = %d\n", y_mismatch);
+        } else {
+            printf("INFO: decode Y-plane matches with reference\n");
+        }
+
+        // compare uv_plane
+        int uv_mismatch = 0;
+        uint8_t *uv_buf = (uint8_t*)out_buf + output_image.offsets[1];
         int uv_pitch = output_image.pitches[1];
-        for (size_t i = 0; i < CLIP_HEIGHT/2; i++)
-        {
-            fwrite(uv_buf + uv_pitch*i, CLIP_WIDTH, 1, fp);
+        for (size_t j = 0; j < (CLIP_HEIGHT/2); j++) {
+            for (size_t i = 0; i < CLIP_WIDTH; i++) {
+                uv_mismatch += (y_buf[j*y_pitch + i] != (uint8_t)ref_nv12_y[j*CLIP_WIDTH + i]);
+            }
         }
-
-        // use below command line to convert nv12 surface as bmp image
-        /* ffmpeg -s 224x224 -pix_fmt nv12 -f rawvideo -i out.nv12 out.bmp */
-
-        fclose(fp);
+        if (uv_mismatch) {
+            printf("INFO: warning!! decode UV-plane doesn't match with reference, mismatch_count = %d\n", uv_mismatch);
+        } else {
+            printf("INFO: decode UV-plane matches with reference\n");
+        }
     }
 
     vaDestroyConfig(va_dpy,config_id);
