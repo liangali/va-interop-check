@@ -27,14 +27,16 @@
 
 using namespace InferenceEngine;
 
-#define CHECK_VASTATUS(va_status,func)                                     \
+VADisplay va_dpy = NULL;
+int drm_fd = -1;
+VAStatus va_status = VA_STATUS_SUCCESS;
+
+#define CHECK_VASTATUS(va_status, func)                                     \
 if (va_status != VA_STATUS_SUCCESS) {                                      \
     fprintf(stderr,"%s:%s (%d) failed, exit\n", __func__, func, __LINE__); \
     exit(1);                                                               \
 }
 
-VADisplay va_dpy = NULL;
-int drm_fd = -1;
 const size_t batch_size = 2;
 const std::string device_name = "DNNL";
 const std::string input_model = "/home/fresh/data/work/va_solution_innersource/source/intel-visual-analytics/assets/models/resnet_v1.5_50_i8.xml";
@@ -54,7 +56,6 @@ void setBatchSize(CNNNetwork& network, size_t batch) {
 int initVA()
 {
     VADisplay disp;
-    VAStatus va_res = VA_STATUS_SUCCESS;
     int major_version = 0, minor_version = 0;
 
     int adapter_num = 0;
@@ -77,14 +78,79 @@ int initVA()
     }
     printf("INFO: drm_fd = 0x%08lx\n", (uint64_t)va_dpy);
 
-    va_res = vaInitialize(va_dpy, &major_version, &minor_version);
-    if (VA_STATUS_SUCCESS != va_res) {
+    va_status = vaInitialize(va_dpy, &major_version, &minor_version);
+    if (VA_STATUS_SUCCESS != va_status) {
         close(drm_fd);
         drm_fd = -1;
-        printf("ERROR: failed in vaInitialize with err = %d\n", va_res);
+        printf("ERROR: failed in vaInitialize with err = %d\n", va_status);
         return -1;
     }
     printf("INFO: vaInitialize done\n");
+
+    return 0;
+}
+int resizeFrame(VASurfaceID &src_surf, VASurfaceID &dst_surf)
+{
+    int major_ver, minor_ver;
+    uint16_t srcw = 224;
+    uint16_t srch = 224;
+    uint16_t dstw = 224;
+    uint16_t dsth = 224;
+    uint32_t src_fourcc  = VA_FOURCC('N','V','1','2');
+    uint32_t dst_fourcc  = VA_FOURCC('N','V','1','2'); //VA_FOURCC('I','4','2','0');
+    uint32_t src_format  = VA_RT_FORMAT_YUV420;
+    uint32_t dst_format  = VA_RT_FORMAT_YUV420;
+    VASurfaceAttrib surf_attrib = {};
+
+    VAConfigAttrib attrib = {};
+    attrib.type = VAConfigAttribRTFormat;
+    va_status = vaGetConfigAttributes(va_dpy, VAProfileNone, VAEntrypointVideoProc, &attrib, 1);
+    CHECK_VASTATUS(va_status, "vaGetConfigAttributes");
+
+    VAConfigID config_id = 0;
+    va_status = vaCreateConfig(va_dpy, VAProfileNone, VAEntrypointVideoProc, &attrib, 1, &config_id);
+    CHECK_VASTATUS(va_status, "vaCreateConfig");
+
+    surf_attrib.type =  VASurfaceAttribPixelFormat;
+    surf_attrib.flags = VA_SURFACE_ATTRIB_SETTABLE;
+    surf_attrib.value.type = VAGenericValueTypeInteger;
+    surf_attrib.value.value.i = dst_fourcc;
+    va_status = vaCreateSurfaces(va_dpy, dst_format, dstw, dsth, &dst_surf, 1, &surf_attrib, 1);
+    CHECK_VASTATUS(va_status, "vaCreateSurfaces");
+    printf("INFO: VPP dst_surf = %d\n", dst_surf);
+
+    VAContextID ctx_id = 0;
+    va_status = vaCreateContext(va_dpy, config_id, dstw, dsth, VA_PROGRESSIVE, &dst_surf, 1, &ctx_id);
+    CHECK_VASTATUS(va_status, "vaCreateContext");
+    printf("INFO: VPP ctx_id = 0x%08x\n", ctx_id);
+
+    VAProcPipelineParameterBuffer pipeline_param = {};
+    VARectangle src_rect = {0, 0, srcw, srch};
+    VARectangle dst_rect = {0, 0, dstw, dsth};
+    VABufferID pipeline_buf_id = VA_INVALID_ID;
+    uint32_t filter_count = 0;
+    VABufferID filter_buf_id = VA_INVALID_ID;
+    pipeline_param.surface = src_surf;
+    pipeline_param.surface_region = &src_rect;
+    pipeline_param.output_region = &dst_rect;
+    pipeline_param.filter_flags = 0;
+    pipeline_param.filters      = &filter_buf_id;
+    pipeline_param.num_filters  = filter_count;
+    va_status = vaCreateBuffer(va_dpy, ctx_id, VAProcPipelineParameterBufferType, sizeof(pipeline_param), 1, &pipeline_param, &pipeline_buf_id);
+    CHECK_VASTATUS(va_status, "vaCreateBuffer");
+
+    va_status = vaBeginPicture(va_dpy, ctx_id, dst_surf);
+    CHECK_VASTATUS(va_status, "vaBeginPicture");
+
+    va_status = vaRenderPicture(va_dpy, ctx_id, &pipeline_buf_id, 1);
+    CHECK_VASTATUS(va_status, "vaRenderPicture");
+
+    va_status = vaEndPicture(va_dpy, ctx_id);
+    CHECK_VASTATUS(va_status, "vaEndPicture");
+
+    vaDestroyBuffer(va_dpy, pipeline_buf_id);
+    vaDestroyContext(va_dpy, ctx_id);
+    vaDestroyConfig(va_dpy, config_id);
 
     return 0;
 }
@@ -112,7 +178,6 @@ int decodeFrame(VASurfaceID& frame)
     VAContextID context_id;
     VABufferID pic_param_buf, iqmatrix_buf, slice_param_buf, slice_data_buf;
     int major_ver, minor_ver;
-    VAStatus va_status;
     int putsurface=0;
 
     va_status = vaQueryConfigEntrypoints(va_dpy, VAProfileH264Main, entrypoints, 
@@ -231,9 +296,15 @@ int main (int argc, char **argv)
         return -1;
     }
 
-    VASurfaceID va_frame;
-    if(decodeFrame(va_frame)) {
+    VASurfaceID va_frame1;
+    if(decodeFrame(va_frame1)) {
         printf("ERROR: decode failed\n");
+        return -1;
+    }
+
+    VASurfaceID va_frame2;
+    if(resizeFrame(va_frame1, va_frame2)) {
+        printf("ERROR: vpp resize frame failed\n");
         return -1;
     }
 
@@ -278,9 +349,6 @@ int main (int argc, char **argv)
     auto shared_va_context = gpu::make_shared_context(ie, device_name, va_dpy);
     ExecutableNetwork executable_network = ie.LoadNetwork(network, shared_va_context);
     InferRequest infer_request = executable_network.CreateInferRequest();
-
-    VASurfaceID va_frame1 = va_frame;
-    VASurfaceID va_frame2 = 0; // VASurfaceID=0 is valid decode RT, although empty conent, just use it for test. 
 
     std::vector<Blob::Ptr> blobs;
     auto image1 = gpu::make_shared_blob_nv12(CLIP_HEIGHT, CLIP_WIDTH, shared_va_context, va_frame1); 
