@@ -37,9 +37,14 @@ if (va_status != VA_STATUS_SUCCESS) {                                      \
     exit(1);                                                               \
 }
 
-const size_t batch_size = 2;
+#ifdef DLDT_DNNL
 const std::string device_name = "DNNL";
-const std::string input_model = "/home/fresh/data/work/va_solution_innersource/source/intel-visual-analytics/assets/models/resnet_v1.5_50_i8.xml";
+#else
+const std::string device_name = "GPU";
+#endif
+
+const size_t batch_size = 2;
+const std::string input_model = "models/resnet_v1.5_50_i8.xml";
 
 void setBatchSize(CNNNetwork& network, size_t batch) {
     ICNNNetwork::InputShapes inputShapes = network.getInputShapes();

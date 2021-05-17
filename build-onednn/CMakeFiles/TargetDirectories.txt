@@ -1,0 +1,3 @@
+/home/fresh/data/dg2_va_solution/source/va-interop-check/build-onednn/CMakeFiles/rebuild_cache.dir
+/home/fresh/data/dg2_va_solution/source/va-interop-check/build-onednn/CMakeFiles/edit_cache.dir
+/home/fresh/data/dg2_va_solution/source/va-interop-check/build-onednn/CMakeFiles/interop.dir
