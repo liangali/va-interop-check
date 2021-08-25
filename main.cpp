@@ -39,13 +39,8 @@ if (va_status != VA_STATUS_SUCCESS) {                                      \
     exit(1);                                                               \
 }
 
-#ifdef DLDT_DNNL
-const std::string device_name = "DNNL";
-#else
 const std::string device_name = "GPU";
-#endif
-
-const size_t batch_size = 2;
+const size_t batch_size = 1;
 const std::string input_model = "models/resnet_v1.5_50_i8.xml";
 
 void setBatchSize(CNNNetwork& network, size_t batch) {
@@ -324,13 +319,18 @@ int main (int argc, char **argv)
         std::cerr << "Network inputs info is empty" << std::endl;
         return -1;
     }
-    InputInfo::Ptr input_info = network.getInputsInfo().begin()->second;
+
+    //InputInfo::Ptr input_info = network.getInputsInfo().begin()->second;
+    // input_info->setLayout(Layout::NCHW);
+    // input_info->setPrecision(Precision::U8);
+    // input_info->getPreProcess().setColorFormat(ColorFormat::NV12);
+
     std::string input_name = network.getInputsInfo().begin()->first;
-    input_info->setLayout(Layout::NCHW);
-    input_info->setPrecision(Precision::U8);
-    input_info->getPreProcess().setColorFormat(ColorFormat::NV12);
     InferenceEngine::InputsDataMap inputInfo(network.getInputsInfo());
     auto& inputInfoFirst = inputInfo.begin()->second;
+	inputInfoFirst->setPrecision(Precision::U8);
+	inputInfoFirst->getInputData()->setLayout(Layout::NCHW);
+    inputInfoFirst->getPreProcess().setColorFormat(ColorFormat::NV12);
     const InferenceEngine::SizeVector inputDims = inputInfoFirst->getTensorDesc().getDims();
     size_t inputBatch = inputDims[0];
     size_t inputChannel = inputDims[1];
@@ -354,20 +354,14 @@ int main (int argc, char **argv)
     printf("INFO: output_name = %s, outputSize = %ld\n", output_name.c_str(), outputSize);
 
     auto shared_va_context = gpu::make_shared_context(ie, device_name, va_dpy);
-
-#ifdef DLDT_DNNL
-    ExecutableNetwork executable_network = ie.LoadNetwork(network, shared_va_context);
-#else
-    ExecutableNetwork executable_network = ie.LoadNetwork(network, shared_va_context, {{CLDNNConfigParams::KEY_CLDNN_NV12_TWO_INPUTS, PluginConfigParams::YES }});
-#endif
-
+    ExecutableNetwork executable_network = ie.LoadNetwork(network, shared_va_context, {{GPUConfigParams::KEY_GPU_NV12_TWO_INPUTS, PluginConfigParams::YES}});
     InferRequest infer_request = executable_network.CreateInferRequest();
 
     std::vector<InferenceEngine::Blob::Ptr> blobs;
     auto image1 = gpu::make_shared_blob_nv12(CLIP_HEIGHT, CLIP_WIDTH, shared_va_context, va_frame1); 
-    auto image2 = gpu::make_shared_blob_nv12(CLIP_HEIGHT, CLIP_WIDTH, shared_va_context, va_frame2); 
+    //auto image2 = gpu::make_shared_blob_nv12(CLIP_HEIGHT, CLIP_WIDTH, shared_va_context, va_frame2); 
     blobs.push_back(image1);
-    blobs.push_back(image2);
+    //blobs.push_back(image2);
     auto batchedBlob = make_shared_blob<BatchedBlob>(blobs);
     infer_request.SetBlob(input_name, batchedBlob);
 
